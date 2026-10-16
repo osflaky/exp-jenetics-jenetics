@@ -1,0 +1,169 @@
+/*
+ * Java Genetic Algorithm Library (@__identifier__@).
+ * Copyright (c) @__year__@ Franz Wilhelmstötter
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * Author:
+ *    Franz Wilhelmstötter (franz.wilhelmstoetter@gmail.com)
+ */
+package io.jenetics;
+
+import static io.jenetics.TestUtils.newDoubleGenePopulation;
+
+import java.io.Serial;
+import java.util.Random;
+
+import org.testng.Assert;
+import org.testng.annotations.DataProvider;
+import org.testng.annotations.Test;
+
+import io.jenetics.distassert.observation.Histogram;
+import io.jenetics.distassert.observation.Interval;
+import io.jenetics.stat.LongMomentStatistics;
+import io.jenetics.util.CharSeq;
+import io.jenetics.util.ISeq;
+import io.jenetics.util.LongRange;
+import io.jenetics.util.MSeq;
+import io.jenetics.util.RandomRegistry;
+
+/**
+ * @author <a href="mailto:franz.wilhelmstoetter@gmail.com">Franz Wilhelmstötter</a>
+ */
+public class SinglePointCrossoverTest extends AltererTester {
+
+	private static final class ConstRandom extends Random {
+		@Serial
+		private static final long serialVersionUID = 1L;
+		private final int _value;
+
+		public ConstRandom(final int value) {
+			_value = value;
+		}
+
+		@Override
+		public int nextInt() {
+			return _value;
+		}
+
+		@Override
+		public int nextInt(int n) {
+			return _value;
+		}
+
+	}
+
+	@Override
+	public Alterer<DoubleGene, Double> newAlterer(final double p) {
+		return new SinglePointCrossover<>(p);
+	}
+
+	@Test
+	public void crossover() {
+		final CharSeq chars = CharSeq.of("a-zA-Z");
+
+		final ISeq<CharacterGene> g1 = ISeq.of(CharacterChromosome.of(chars, 20));
+		final ISeq<CharacterGene> g2 = ISeq.of(CharacterChromosome.of(chars, 20));
+
+		final int rv1 = 12;
+		RandomRegistry.with(new ConstRandom(rv1)).run(() -> {
+			final SinglePointCrossover<CharacterGene, Double>
+			crossover = new SinglePointCrossover<>();
+
+			MSeq<CharacterGene> g1c = g1.copy();
+			MSeq<CharacterGene> g2c = g2.copy();
+			crossover.crossover(g1c, g2c);
+
+			Assert.assertEquals(g1c.subSeq(0, rv1), g1.subSeq(0, rv1));
+			Assert.assertEquals(g1c.subSeq(rv1), g2.subSeq(rv1));
+			Assert.assertNotEquals(g1c, g2);
+			Assert.assertNotEquals(g2c, g1);
+
+			final int rv2 = 0;
+			RandomRegistry.with(new ConstRandom(rv2)).run(() -> {
+				MSeq<CharacterGene> g1c2 = g1.copy();
+				MSeq<CharacterGene> g2c2 = g2.copy();
+				crossover.crossover(g1c2, g2c2);
+				Assert.assertEquals(g1c2, g2);
+				Assert.assertEquals(g2c2, g1);
+				Assert.assertEquals(g1c2.subSeq(0, rv2), g1.subSeq(0, rv2));
+				Assert.assertEquals(g1c2.subSeq(rv2), g2.subSeq(rv2));
+
+				final int rv3 = 1;
+				RandomRegistry.with(new ConstRandom(rv3)).run(() -> {
+					MSeq<CharacterGene> g1c3 = g1.copy();
+					MSeq<CharacterGene> g2c3 = g2.copy();
+					crossover.crossover(g1c3, g2c3);
+					Assert.assertEquals(g1c3.subSeq(0, rv3), g1.subSeq(0, rv3));
+					Assert.assertEquals(g1c3.subSeq(rv3), g2.subSeq(rv3));
+
+					final int rv4 = g1.length();
+					RandomRegistry.with(new ConstRandom(rv4)).run(() -> {
+						MSeq<CharacterGene> g1c4 = g1.copy();
+						MSeq<CharacterGene> g2c4 = g2.copy();
+						crossover.crossover(g1c4, g2c);
+						Assert.assertEquals(g1c4, g1);
+						Assert.assertEquals(g2c4, g2);
+						Assert.assertEquals(g1c4.subSeq(0, rv4), g1.subSeq(0, rv4));
+						Assert.assertEquals(g1c4.subSeq(rv4), g2.subSeq(rv4));
+					});
+				});
+			});
+		});
+	}
+
+	@Test(dataProvider = "alterProbabilityParameters", groups = {"statistics"})
+	public void alterProbability(
+		final Integer ngenes,
+		final Integer nchromosomes,
+		final Integer npopulation,
+		final Double p
+	) {
+		final ISeq<Phenotype<DoubleGene, Double>> population =
+			newDoubleGenePopulation(ngenes, nchromosomes, npopulation);
+
+		// The mutator to test.
+		final SinglePointCrossover<DoubleGene, Double> crossover =
+			new SinglePointCrossover<>(p);
+
+		final long nallgenes = ngenes*nchromosomes*npopulation;
+		final long N = 200;
+		final double mean = crossover.order()*npopulation*p;
+
+		final long min = 0;
+		final long max = nallgenes;
+		final var domain = new LongRange(min, max);
+
+		final var histogram = Histogram.Builder.of(new Interval(min, max), 10);
+		final LongMomentStatistics variance = new LongMomentStatistics();
+
+		for (int i = 0; i < N; ++i) {
+			final long alterations = crossover
+				.alter(population, 1)
+				.alterations();
+			histogram.accept(alterations);
+			variance.accept(alterations);
+		}
+
+		// Normal distribution as approximation for binomial distribution.
+		// TODO: Implement test
+		//assertDistribution(histogram, new NormalDistribution<>(domain, mean, variance.getVariance()));
+	}
+
+
+	@DataProvider(name = "alterProbabilityParameters")
+	public Object[][] alterProbabilityParameters() {
+		return TestUtils.alterProbabilityParameters();
+	}
+
+}

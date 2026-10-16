@@ -1,0 +1,29 @@
+name: Jenetics Build
+
+on:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - os: windows-latest
+          java-version: 25
+          arch: arm64
+          runner: windows-11-arm
+          expander_leg: windows-latest--arm64
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up JDK ${{ matrix.java-version }} on ${{ matrix.os }}
+      uses: actions/setup-java@v4
+      with:
+        java-version: ${{ matrix.java-version }}
+        distribution: 'zulu'
+        cache: 'gradle'
+    - name: Build with Gradle
+      run: ./gradlew build --stacktrace --info
+    name: build [${{ matrix.expander_leg }}]
+    timeout-minutes: 150
